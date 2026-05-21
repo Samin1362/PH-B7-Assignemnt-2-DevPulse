@@ -7,6 +7,7 @@ import cors from 'cors';
 import { StatusCodes } from 'http-status-codes';
 import notFound from './middleware/notFound.js';
 import globalErrorHandler from './middleware/globalErrorHandler.js';
+import authRoutes from './modules/auth/auth.routes.js';
 
 const app: Application = express();
 
@@ -20,6 +21,8 @@ app.get('/', (_req: Request, res: Response) => {
     message: 'DevPulse API is running',
   });
 });
+
+app.use('/api/auth', authRoutes);
 
 app.use(notFound);
 app.use(globalErrorHandler);
