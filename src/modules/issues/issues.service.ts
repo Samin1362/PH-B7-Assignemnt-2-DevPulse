@@ -4,6 +4,7 @@ import AppError from '../../utils/AppError.js';
 import type {
   CreateIssueInput,
   IssuesQueryInput,
+  UpdateIssueInput,
 } from './issues.validation.js';
 
 export interface IssueRow {
@@ -40,20 +41,22 @@ export const createIssue = async (
   return result.rows[0] as IssueRow;
 };
 
-export const getIssueById = async (
-  id: number,
-): Promise<IssueWithReporter> => {
-  const issueRes = await pool.query<IssueRow>(
+export const findIssueRowById = async (id: number): Promise<IssueRow> => {
+  const res = await pool.query<IssueRow>(
     `SELECT id, title, description, type, status, reporter_id, created_at, updated_at
      FROM issues WHERE id = $1`,
     [id],
   );
-
-  if (issueRes.rowCount === 0) {
+  if (res.rowCount === 0) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Issue not found');
   }
+  return res.rows[0] as IssueRow;
+};
 
-  const issue = issueRes.rows[0] as IssueRow;
+export const getIssueById = async (
+  id: number,
+): Promise<IssueWithReporter> => {
+  const issue = await findIssueRowById(id);
 
   const reporterRes = await pool.query<Reporter>(
     'SELECT id, name, role FROM users WHERE id = $1',
@@ -68,6 +71,46 @@ export const getIssueById = async (
 
   const { reporter_id: _r, ...rest } = issue;
   return { ...rest, reporter };
+};
+
+export const updateIssue = async (
+  id: number,
+  fields: UpdateIssueInput,
+): Promise<IssueRow> => {
+  const ALLOWED: Array<keyof UpdateIssueInput> = [
+    'title',
+    'description',
+    'type',
+    'status',
+  ];
+
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+
+  for (const key of ALLOWED) {
+    const value = fields[key];
+    if (value !== undefined) {
+      values.push(value);
+      setClauses.push(`${key} = $${values.length}`);
+    }
+  }
+
+  if (setClauses.length === 0) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'No fields to update');
+  }
+
+  values.push(id);
+  const result = await pool.query<IssueRow>(
+    `UPDATE issues SET ${setClauses.join(', ')}
+     WHERE id = $${values.length}
+     RETURNING id, title, description, type, status, reporter_id, created_at, updated_at`,
+    values,
+  );
+
+  if (result.rowCount === 0) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Issue not found');
+  }
+  return result.rows[0] as IssueRow;
 };
 
 export const getAllIssues = async (
