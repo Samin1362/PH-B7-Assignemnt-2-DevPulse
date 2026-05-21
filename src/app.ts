@@ -1,26 +1,17 @@
-import express, {
-  type Application,
-  type Request,
-  type Response,
-} from 'express';
+import express from 'express';
 import cors from 'cors';
-import { StatusCodes } from 'http-status-codes';
-import notFound from './middleware/notFound.js';
-import globalErrorHandler from './middleware/globalErrorHandler.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import issuesRoutes from './modules/issues/issues.routes.js';
+import notFound from './middleware/notFound.js';
+import globalErrorHandler from './middleware/globalErrorHandler.js';
 
-const app: Application = express();
+const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-app.get('/', (_req: Request, res: Response) => {
-  res.status(StatusCodes.OK).json({
-    success: true,
-    message: 'DevPulse API is running',
-  });
+app.get('/', (_req, res) => {
+  res.json({ success: true, message: 'DevPulse API is running' });
 });
 
 app.use('/api/auth', authRoutes);
