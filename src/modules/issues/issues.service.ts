@@ -1,7 +1,10 @@
 import { StatusCodes } from 'http-status-codes';
 import { pool } from '../../db/index.js';
 import AppError from '../../utils/AppError.js';
-import type { CreateIssueInput } from './issues.validation.js';
+import type {
+  CreateIssueInput,
+  IssuesQueryInput,
+} from './issues.validation.js';
 
 export interface IssueRow {
   id: number;
@@ -65,6 +68,56 @@ export const getIssueById = async (
 
   const { reporter_id: _r, ...rest } = issue;
   return { ...rest, reporter };
+};
+
+export const getAllIssues = async (
+  query: IssuesQueryInput,
+): Promise<IssueWithReporter[]> => {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (query.type) {
+    params.push(query.type);
+    conditions.push(`type = $${params.length}`);
+  }
+  if (query.status) {
+    params.push(query.status);
+    conditions.push(`status = $${params.length}`);
+  }
+
+  const where =
+    conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const order = query.sort === 'oldest' ? 'ASC' : 'DESC';
+
+  const issuesRes = await pool.query<IssueRow>(
+    `SELECT id, title, description, type, status, reporter_id, created_at, updated_at
+     FROM issues ${where} ORDER BY created_at ${order}, id ${order}`,
+    params,
+  );
+
+  if (issuesRes.rowCount === 0) return [];
+
+  const reporterIds = [
+    ...new Set(issuesRes.rows.map((r) => r.reporter_id)),
+  ];
+
+  const reportersRes = await pool.query<Reporter>(
+    'SELECT id, name, role FROM users WHERE id = ANY($1::int[])',
+    [reporterIds],
+  );
+
+  const reporterMap = new Map<number, Reporter>();
+  for (const r of reportersRes.rows) reporterMap.set(r.id, r);
+
+  return issuesRes.rows.map((issue) => {
+    const { reporter_id, ...rest } = issue;
+    const reporter: Reporter = reporterMap.get(reporter_id) ?? {
+      id: reporter_id,
+      name: 'Unknown',
+      role: 'contributor',
+    };
+    return { ...rest, reporter };
+  });
 };
 
 export const deleteIssue = async (id: number): Promise<void> => {
