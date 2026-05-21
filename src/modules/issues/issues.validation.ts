@@ -18,3 +18,11 @@ export type CreateIssueInput = z.infer<typeof createIssueSchema>;
 export const issueIdParamSchema = z.object({
   id: z.coerce.number().int().positive('Invalid issue id'),
 });
+
+export const issuesQuerySchema = z.object({
+  sort: z.enum(['newest', 'oldest']).default('newest'),
+  type: z.enum(['bug', 'feature_request']).optional(),
+  status: z.enum(['open', 'in_progress', 'resolved']).optional(),
+});
+
+export type IssuesQueryInput = z.infer<typeof issuesQuerySchema>;

@@ -6,6 +6,7 @@ import AppError from '../../utils/AppError.js';
 import {
   createIssueSchema,
   issueIdParamSchema,
+  issuesQuerySchema,
 } from './issues.validation.js';
 import * as issuesService from './issues.service.js';
 
@@ -19,6 +20,15 @@ export const createIssue = catchAsync(async (req: Request, res: Response) => {
     success: true,
     message: 'Issue created successfully',
     data: issue,
+  });
+});
+
+export const getAllIssues = catchAsync(async (req: Request, res: Response) => {
+  const query = issuesQuerySchema.parse(req.query);
+  const issues = await issuesService.getAllIssues(query);
+  sendResponse(res, StatusCodes.OK, {
+    success: true,
+    data: issues,
   });
 });
 
