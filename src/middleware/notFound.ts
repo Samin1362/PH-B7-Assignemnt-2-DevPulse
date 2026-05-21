@@ -1,8 +1,7 @@
-import type { Request, RequestHandler, Response } from 'express';
-import { StatusCodes } from 'http-status-codes';
+import type { RequestHandler } from 'express';
 
-export const notFound: RequestHandler = (req: Request, res: Response) => {
-  res.status(StatusCodes.NOT_FOUND).json({
+const notFound: RequestHandler = (req, res) => {
+  res.status(404).json({
     success: false,
     message: 'Route not found',
     errors: `Cannot ${req.method} ${req.originalUrl}`,

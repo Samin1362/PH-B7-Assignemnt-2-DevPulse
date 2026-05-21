@@ -1,69 +1,33 @@
 import bcrypt from 'bcrypt';
-import { StatusCodes } from 'http-status-codes';
 import { pool } from '../../db/index.js';
-import AppError from '../../utils/AppError.js';
 import config from '../../config/index.js';
+import AppError from '../../utils/AppError.js';
 import { signToken } from '../../utils/jwt.js';
-import type { LoginInput, SignupInput } from './auth.validation.js';
+import type { SignupInput, LoginInput } from './auth.validation.js';
 
-export interface UserPublic {
-  id: number;
-  name: string;
-  email: string;
-  role: 'contributor' | 'maintainer';
-  created_at: Date;
-  updated_at: Date;
-}
+export const registerUser = async ({ name, email, password, role }: SignupInput) => {
+  const existing = await pool.query('SELECT 1 FROM users WHERE email = $1', [email]);
+  if (existing.rowCount) throw new AppError(400, 'Email already in use');
 
-interface UserRow extends UserPublic {
-  password: string;
-}
-
-export const registerUser = async (input: SignupInput): Promise<UserPublic> => {
-  const existing = await pool.query(
-    'SELECT 1 FROM users WHERE email = $1',
-    [input.email],
-  );
-
-  if (existing.rowCount && existing.rowCount > 0) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Email already in use');
-  }
-
-  const hashed = await bcrypt.hash(input.password, config.bcrypt_salt_rounds);
-  const role = input.role ?? 'contributor';
-
-  const result = await pool.query<UserPublic>(
-    `INSERT INTO users (name, email, password, role)
-     VALUES ($1, $2, $3, $4)
+  const hashed = await bcrypt.hash(password, config.bcrypt_salt_rounds);
+  const { rows } = await pool.query(
+    `INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4)
      RETURNING id, name, email, role, created_at, updated_at`,
-    [input.name, input.email, hashed, role],
+    [name, email, hashed, role || 'contributor'],
   );
-
-  return result.rows[0] as UserPublic;
+  return rows[0];
 };
 
-export const loginUser = async (
-  input: LoginInput,
-): Promise<{ token: string; user: UserPublic }> => {
-  const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password, role, created_at, updated_at
-     FROM users WHERE email = $1`,
-    [input.email],
+export const loginUser = async ({ email, password }: LoginInput) => {
+  const { rows } = await pool.query(
+    'SELECT id, name, email, password, role, created_at, updated_at FROM users WHERE email = $1',
+    [email],
   );
+  if (!rows[0]) throw new AppError(401, 'Invalid email or password');
 
-  if (result.rowCount === 0) {
-    throw new AppError(StatusCodes.UNAUTHORIZED, 'Invalid email or password');
-  }
+  const valid = await bcrypt.compare(password, rows[0].password);
+  if (!valid) throw new AppError(401, 'Invalid email or password');
 
-  const user = result.rows[0] as UserRow;
-  const valid = await bcrypt.compare(input.password, user.password);
-
-  if (!valid) {
-    throw new AppError(StatusCodes.UNAUTHORIZED, 'Invalid email or password');
-  }
-
-  const token = signToken({ id: user.id, name: user.name, role: user.role });
-
-  const { password: _password, ...userPublic } = user;
-  return { token, user: userPublic };
+  const { password: _, ...user } = rows[0];
+  return { token: signToken({ id: user.id, name: user.name, role: user.role }), user };
 };
