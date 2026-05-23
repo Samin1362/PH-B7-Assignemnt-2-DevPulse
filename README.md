@@ -1,8 +1,22 @@
 # DevPulse — Internal Tech Issue & Feature Tracker
 
-A collaborative platform for software teams to report bugs, suggest features, and coordinate resolutions.
+A backend service for software teams to report bugs, propose features, and track resolution workflow.
 
-> **Status:** Phase 1 (Foundation & Infrastructure) implemented. See [`plan.md`](./plan.md) for the full roadmap.
+**Live URL:** _add after Render deploy_
+**Repository:** _add after GitHub push_
+
+---
+
+## Features
+
+- JWT-based signup & login
+- Role-based access (`contributor`, `maintainer`)
+- Create, list, fetch, update, and delete issues
+- Filter by `type`/`status`, sort `newest`/`oldest`
+- Reporter info embedded on list/get (no SQL JOINs)
+- Permission rules:
+  - Maintainer: edit/delete any issue
+  - Contributor: edit own issue only while `open`, cannot change status
 
 ---
 
@@ -10,108 +24,130 @@ A collaborative platform for software teams to report bugs, suggest features, an
 
 | Layer | Choice |
 |---|---|
-| Runtime | Node.js (LTS, 24.x+) |
+| Runtime | Node.js 24.x LTS |
 | Language | TypeScript (strict) |
-| Framework | Express.js 5 |
-| Database | PostgreSQL (raw SQL via `pg`, no ORM, no JOINs) |
-| Auth | `bcrypt` (password hashing) + `jsonwebtoken` (JWT) |
-| Validation | `zod` |
-| Status codes | `http-status-codes` |
+| Framework | Express 5 |
+| Database | PostgreSQL (NeonDB) |
+| Driver | `pg` (raw SQL only — no ORM, no query builder, no JOINs) |
+| Auth | `bcrypt` + `jsonwebtoken` |
 
 ---
 
-## Project Structure
+## API Endpoints
+
+| # | Method | Path | Access | Description |
+|---|---|---|---|---|
+| 1 | POST | `/api/auth/signup` | Public | Register a new user |
+| 2 | POST | `/api/auth/login` | Public | Login, receive JWT |
+| 3 | POST | `/api/issues` | Authenticated | Create issue |
+| 4 | GET | `/api/issues` | Public | List issues (`?sort`, `?type`, `?status`) |
+| 5 | GET | `/api/issues/:id` | Public | Fetch one issue |
+| 6 | PATCH | `/api/issues/:id` | Maintainer (any) / Contributor (own + open) | Update issue |
+| 7 | DELETE | `/api/issues/:id` | Maintainer only | Delete issue |
+
+Authenticated routes expect a raw token in the header:
 
 ```
-PH-B7-Assignment-2/
-├── plan.md                    # Phased development roadmap
-├── project_requirement.md     # Original assignment spec
-├── README.md                  # This file
-└── backend/
-    ├── .env                   # Local env (gitignored)
-    ├── .env.example           # Documented env template
-    ├── package.json
-    ├── tsconfig.json
-    └── src/
-        ├── app.ts             # Express app wiring
-        ├── server.ts          # Boot + listen + graceful shutdown
-        ├── config/index.ts    # Env loading + validation
-        ├── db/index.ts        # pg Pool + query helper
-        ├── middleware/
-        │   ├── notFound.ts
-        │   └── globalErrorHandler.ts
-        ├── modules/           # (added in later phases)
-        └── utils/
-            ├── AppError.ts
-            ├── catchAsync.ts
-            └── sendResponse.ts
+Authorization: <JWT_TOKEN>
+```
+
+### Response Shape
+
+```jsonc
+// success
+{ "success": true, "message": "…", "data": { ... } }
+
+// error
+{ "success": false, "message": "…", "errors": "…" }
 ```
 
 ---
 
-## Getting Started
+## Database Schema
 
-### 1. Clone & install
+### `users`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | SERIAL PK | auto-increment |
+| `name` | TEXT NOT NULL | |
+| `email` | TEXT UNIQUE NOT NULL | |
+| `password` | TEXT NOT NULL | bcrypt hash, never returned |
+| `role` | TEXT CHECK (`contributor` \| `maintainer`) | default `contributor` |
+| `created_at` | TIMESTAMPTZ | default `now()` |
+| `updated_at` | TIMESTAMPTZ | trigger auto-updates |
+
+### `issues`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | SERIAL PK | |
+| `title` | VARCHAR(150) NOT NULL | |
+| `description` | TEXT NOT NULL | length ≥ 20 (CHECK) |
+| `type` | TEXT CHECK (`bug` \| `feature_request`) | |
+| `status` | TEXT CHECK (`open` \| `in_progress` \| `resolved`) | default `open` |
+| `reporter_id` | INTEGER NOT NULL | no FK (validated in app) |
+| `created_at` | TIMESTAMPTZ | default `now()` |
+| `updated_at` | TIMESTAMPTZ | trigger auto-updates |
+
+Indexes: `reporter_id`, `type`, `status`, `created_at`.
+
+---
+
+## Local Setup
 
 ```bash
-git clone <your-repo-url>
+git clone <repo-url>
 cd PH-B7-Assignment-2/backend
 npm install
+cp .env.example .env       # fill in values
+npm run dev
 ```
 
-### 2. Configure environment
+Server boots at `http://localhost:5001`. Health check: `GET /`.
 
-Copy the template and fill in your values:
+### Scripts
 
-```bash
-cp .env.example .env
-```
-
-Required variables:
-
-| Key | Description |
+| Command | Purpose |
 |---|---|
-| `CONNECTION_STRING` | PostgreSQL URL (e.g. NeonDB / Supabase) |
-| `PORT` | HTTP port (default `5001`) |
-| `NODE_ENV` | `development` or `production` |
-| `JWT_SECRET` | Long random string for signing tokens |
-| `JWT_EXPIRES_IN` | Token TTL (e.g. `7d`) |
-| `BCRYPT_SALT_ROUNDS` | Integer between 8 and 12 |
-
-### 3. Run
-
-```bash
-npm run dev        # tsx watch mode
-npm run typecheck  # type-check only
-npm run build      # compile to dist/
-npm start          # run compiled output
-```
-
-The server logs `DevPulse API listening on port <PORT>` once Postgres is reachable.
+| `npm run dev` | Watch mode via `tsx` |
+| `npm run typecheck` | TS check, no emit |
+| `npm run build` | Compile to `dist/` |
+| `npm start` | Run compiled output |
 
 ---
 
-## Currently Available Endpoints
+## Environment Variables
 
-| Method | Path | Description |
+| Key | Example | Notes |
 |---|---|---|
-| `GET` | `/` | Health check — returns `{ success: true, message: "DevPulse API is running" }` |
+| `CONNECTION_STRING` | `postgresql://user:pass@host/db?sslmode=require` | NeonDB connection URL |
+| `PORT` | `5001` | Render injects automatically |
+| `NODE_ENV` | `production` | |
+| `JWT_SECRET` | long random string | required |
+| `JWT_EXPIRES_IN` | `7d` | |
+| `BCRYPT_SALT_ROUNDS` | `10` | must be 8–12 |
 
-Auth & Issues endpoints land in subsequent phases — see [`plan.md`](./plan.md).
+---
+
+## Deploy to Render
+
+1. Push this repo to GitHub.
+2. On Render, **New → Web Service** and connect the repo.
+3. Settings:
+   - **Root Directory:** `backend`
+   - **Build Command:** `npm install && npm run build`
+   - **Start Command:** `npm start`
+   - **Node Version:** picked up from `package.json` `engines` (24.x)
+4. Add the environment variables above (Render will inject `PORT` itself).
+5. Deploy. Health check hits `GET /` which returns 200.
+
+Tables must exist in the PostgreSQL instance before the first request — schema is managed in NeonDB directly, not from the app.
 
 ---
 
 ## Conventions
 
-- **No JOINs, no ORMs.** All database access is raw SQL via `pool.query()`. Relational lookups use a second `WHERE id = ANY($1::int[])` query + in-memory mapping.
-- **Standard response shape**
-  - Success: `{ success: true, message?, data? }`
-  - Error: `{ success: false, message, errors }`
-- **Errors flow through one path.** Throw `AppError(statusCode, message)` (or let Zod throw); `globalErrorHandler` formats every response.
-- **Strict TypeScript.** No `any`. Request bodies, DB row types, and JWT payloads are typed.
-
----
-
-## License
-
-ISC
+- **No JOINs.** Reporter data is fetched via a batched `WHERE id = ANY($1::int[])` lookup.
+- **One error path.** Throw `AppError(status, message)` from anywhere; `globalErrorHandler` formats every response.
+- **Strict TypeScript.** No `any`; request bodies, DB rows, and JWT payloads are typed.
